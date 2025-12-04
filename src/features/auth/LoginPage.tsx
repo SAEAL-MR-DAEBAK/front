@@ -53,8 +53,13 @@ export const LoginPage: React.FC = () => {
       // Auth store에 로그인 정보 저장
       login(accessToken, user);
 
-      // 원래 가려던 페이지로 이동 (없으면 메인)
-      navigate(from, { replace: true });
+      // 관리자 계정이면 관리자 페이지로 리디렉션
+      if (user.authority === 'ROLE_ADMIN') {
+        navigate('/admin/orders', { replace: true });
+      } else {
+        // 원래 가려던 페이지로 이동 (없으면 메인)
+        navigate(from, { replace: true });
+      }
 
     } catch (err) {
       console.error('로그인 실패:', err);

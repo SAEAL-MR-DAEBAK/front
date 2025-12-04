@@ -36,11 +36,13 @@ export interface RegisterDto {
 export interface UserAddressDto {
   id: string;
   address: string;
+  nickname?: string;
   isDefault: boolean;
 }
 
 export interface AddUserAddressRequest {
   address: string;
+  nickname?: string;
   isDefault?: boolean;
 }
 
@@ -59,23 +61,30 @@ export interface UpdateUserProfileRequest {
 // 결제수단 관련 타입 (백엔드 API 추가 예정)
 // ============================================
 
-export interface PaymentMethodDto {
+export interface UserCardResponseDto {
   id: string;
-  cardNumber: string; // 마스킹된 카드번호 (예: **** **** **** 1234)
-  cardHolder: string;
-  expiryDate: string; // MM/YY 형식
-  cardType: 'VISA' | 'MASTERCARD' | 'AMEX' | 'OTHER';
+  cardBrand: string;
+  cardNumber: string;
+  expiryMonth: number;
+  expiryYear: number;
+  cardHolderName: string;
+  cvv: string;
   isDefault: boolean;
-  createdAt: string;
 }
 
-export interface AddPaymentMethodRequest {
+export interface AddCardRequest {
+  cardBrand: string;
   cardNumber: string;
-  cardHolder: string;
-  expiryDate: string;
+  expiryMonth: number;
+  expiryYear: number;
+  cardHolderName: string;
   cvv: string;
   isDefault?: boolean;
 }
+
+// 하위 호환성을 위한 별칭
+export type PaymentMethodDto = UserCardResponseDto;
+export type AddPaymentMethodRequest = AddCardRequest;
 
 // ============================================
 // 인증 관련 타입
@@ -156,6 +165,8 @@ export interface MenuItemResponseDto {
   id: string;
   name: string;
   stock: number;
+  unitPrice: number;
+  unitType: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -187,6 +198,7 @@ export interface CreateProductRequest {
   quantity: number;
   memo?: string;
   productName?: string;
+  address: string;
 }
 
 export interface ProductResponseDto {
@@ -247,9 +259,9 @@ export interface CartResponseDto {
 // 주문(Order) 관련 타입
 // ============================================
 
-export type OrderStatus = 'PLACED' | 'PAID' | 'CANCELLED' | 'REFUNDED';
+export type OrderStatus = 'PLACED' | 'PENDING_APPROVAL' | 'APPROVED' | 'REJECTED' | 'PAID' | 'CANCELLED' | 'REFUNDED';
 export type PaymentStatus = 'PENDING' | 'SUCCEEDED' | 'FAILED' | 'REFUNDED';
-export type DeliveryStatus = 'READY' | 'SHIPPING' | 'DELIVERED' | 'PICKUP_READY' | 'PICKED_UP';
+export type DeliveryStatus = 'READY' | 'COOKING' | 'SHIPPING' | 'DELIVERED' | 'PICKUP_READY' | 'PICKED_UP';
 export type DeliveryMethod = 'Pickup' | 'Delivery';
 
 export interface OrderItemResponseDto {
@@ -264,6 +276,8 @@ export interface OrderItemResponseDto {
 export interface OrderResponseDto {
   id: string;
   orderNumber: string;
+  userId?: string; // 사용자 ID (검색용)
+  username?: string; // 사용자명 (검색용)
   orderStatus: OrderStatus;
   paymentStatus: PaymentStatus;
   deliveryStatus: DeliveryStatus;
@@ -280,7 +294,17 @@ export interface OrderResponseDto {
   recipientEmail: string;
   paymentTransactionId: string;
   memo: string;
+  rejectionReason?: string; // 관리자 거절 사유
   orderedAt: string;
   updatedAt: string;
   items: OrderItemResponseDto[];
+}
+
+export interface ApproveOrderRequest {
+  approved: boolean;
+  rejectionReason?: string;
+}
+
+export interface UpdateDeliveryStatusRequest {
+  deliveryStatus: DeliveryStatus;
 }

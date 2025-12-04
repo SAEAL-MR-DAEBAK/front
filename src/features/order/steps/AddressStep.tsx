@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
+import apiClient from '../../../lib/axios';
 import { useOrderFlowStore } from '../../../stores/useOrderFlowStore';
 import { useAuthStore } from '../../../stores/useAuthStore';
-import { UserAddressDto } from '../../../types/api';
 
 // ============================================
 // AddressStep 컴포넌트
@@ -20,7 +20,7 @@ export const AddressStep: React.FC = () => {
   // 상태 관리
   // ----------------------------------------
   const [inputAddress, setInputAddress] = useState(selectedAddress);
-  const [savedAddresses, setSavedAddresses] = useState<UserAddressDto[]>([]);
+  const [savedAddresses, setSavedAddresses] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(false);
 
   // ----------------------------------------
@@ -29,18 +29,12 @@ export const AddressStep: React.FC = () => {
   useEffect(() => {
     const fetchAddresses = async () => {
       try {
-        // TODO: 백엔드 API 추가 후 활성화
-        // const response = await apiClient.get<UserAddressDto[]>('/users/addresses');
-        // setSavedAddresses(response.data);
+        const response = await apiClient.get<string[]>('/users/addresses');
+        setSavedAddresses(response.data);
 
-        // 임시: 회원가입 시 등록한 주소 사용
-        if (user?.address) {
-          setSavedAddresses([
-            { id: 'default', address: user.address, isDefault: true },
-          ]);
-          if (!inputAddress) {
-            setInputAddress(user.address);
-          }
+        // 첫 번째 주소가 있고 입력된 주소가 없으면 첫 번째 주소로 설정
+        if (response.data.length > 0 && !inputAddress) {
+          setInputAddress(response.data[0]);
         }
       } catch (err) {
         console.error('주소 목록 로딩 실패:', err);
@@ -48,7 +42,7 @@ export const AddressStep: React.FC = () => {
     };
 
     fetchAddresses();
-  }, [user?.address, inputAddress]);
+  }, []);
 
   // ----------------------------------------
   // 이벤트 핸들러
@@ -67,18 +61,24 @@ export const AddressStep: React.FC = () => {
 
     try {
       // 새 주소인 경우 저장
-      const isNewAddress = !savedAddresses.some((a) => a.address === inputAddress);
+      const isNewAddress = !savedAddresses.includes(inputAddress.trim());
       if (isNewAddress) {
-        // TODO: 백엔드 API 추가 후 활성화
-        // await apiClient.post('/users/addresses', { address: inputAddress });
-        console.log('새 주소 저장 예정:', inputAddress);
+        try {
+          const request = {
+            address: inputAddress.trim(),
+          };
+          await apiClient.post('/users/addresses', request);
+        } catch (err) {
+          // 주소 저장 실패해도 계속 진행 (이미 입력한 주소로 주문 진행)
+          console.warn('주소 저장 실패 (계속 진행):', err);
+        }
       }
 
-      setAddress(inputAddress);
+      setAddress(inputAddress.trim());
       nextStep();
     } catch (err) {
-      console.error('주소 저장 실패:', err);
-      alert('주소 저장에 실패했습니다.');
+      console.error('주소 처리 실패:', err);
+      alert('주소 처리에 실패했습니다.');
     } finally {
       setIsLoading(false);
     }
@@ -107,7 +107,7 @@ export const AddressStep: React.FC = () => {
             type="text"
             value={inputAddress}
             onChange={(e) => setInputAddress(e.target.value)}
-            placeholder="건물명, 도로명, 지번으로 검색하세요."
+            placeholder="서울특별시 동대문구 서울시립대로 163 정보기술관 1층"
             className="flex-1 text-lg border-none outline-none placeholder-gray-400"
           />
           {inputAddress && (
@@ -126,22 +126,24 @@ export const AddressStep: React.FC = () => {
         <div className="bg-white rounded-2xl shadow-lg p-6 mb-6">
           <h3 className="font-bold text-gray-700 mb-4">저장된 주소</h3>
           <div className="space-y-3">
-            {savedAddresses.map((addr) => (
+            {savedAddresses.map((addr, index) => (
               <button
-                key={addr.id}
-                onClick={() => handleSelectAddress(addr.address)}
+                key={index}
+                onClick={() => handleSelectAddress(addr)}
                 className={`w-full text-left p-4 rounded-xl border-2 transition-all ${
-                  inputAddress === addr.address
+                  inputAddress === addr
                     ? 'border-green-600 bg-green-50'
                     : 'border-gray-200 hover:border-green-300'
                 }`}
               >
                 <div className="flex items-center gap-3">
                   <span className="text-xl">🏠</span>
-                  <div>
-                    <p className="font-medium">{addr.address}</p>
-                    {addr.isDefault && (
-                      <span className="text-xs text-green-600">기본 주소</span>
+                  <div className="flex-1">
+                    <p className="font-medium">{addr}</p>
+                    {index === 0 && (
+                      <span className="text-xs text-green-600 bg-green-100 px-2 py-0.5 rounded-full mt-1 inline-block">
+                        기본 주소
+                      </span>
                     )}
                   </div>
                 </div>

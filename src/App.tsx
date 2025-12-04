@@ -9,8 +9,9 @@ import { DinnerListPage } from './features/dinner/DinnerListPage';
 import { DinnerDetailPage } from './features/dinner/DinnerDetailPage';
 import { LoginPage } from './features/auth/LoginPage';
 import { RegisterPage } from './features/auth/RegisterPage';
-import { CartPage } from './features/cart/CartPage';
+import { OrderHistoryPage } from './features/order/components/OrderHistoryPage';
 import { MyPage } from './features/mypage/MyPage';
+import { AdminOrderPage } from './features/admin/AdminOrderPage';
 
 // ============================================
 // 공통 컴포넌트 Import
@@ -48,8 +49,11 @@ const NavigationBar: React.FC = () => {
 
   return (
     <nav className="bg-white shadow-sm border-b border-gray-200 px-4 py-3 flex justify-between items-center sticky top-0 z-30">
-      {/* 로고 (클릭 시 홈으로) */}
-      <Link to="/" className="text-xl font-extrabold text-green-700 flex items-center gap-2">
+      {/* 로고 (클릭 시 홈으로, 관리자는 관리자 페이지로) */}
+      <Link 
+        to={user?.authority === 'ROLE_ADMIN' ? '/admin/orders' : '/'} 
+        className="text-xl font-extrabold text-green-700 flex items-center gap-2"
+      >
         <span>🍽️</span> Mr. DAEBAK
       </Link>
 
@@ -57,49 +61,62 @@ const NavigationBar: React.FC = () => {
       <div className="flex items-center gap-3">
         {isAuthenticated ? (
           // ----------------------------------------
-          // 로그인 상태: 사용자명(마이페이지), 장바구니, AI주문, 로그아웃
+          // 관리자 계정: 로그아웃만 표시
           // ----------------------------------------
-          <>
-            {/* 사용자명 (클릭 시 마이페이지) */}
-            {(user?.displayName || user?.username) && (
-              <Link
-                to="/mypage"
-                className="flex items-center gap-2 px-3 py-2 rounded-lg bg-gray-100 hover:bg-gray-200 transition-colors hidden sm:flex"
-              >
-                <span className="w-7 h-7 bg-green-600 text-white rounded-full flex items-center justify-center text-sm font-bold">
-                  {(user.displayName || user.username || '').charAt(0).toUpperCase()}
-                </span>
-                <span className="text-sm font-medium text-gray-700">
-                  {user.displayName || user.username}님
-                </span>
-              </Link>
-            )}
-
-            {/* 장바구니 버튼 */}
-            <Link
-              to="/cart"
-              className="text-sm font-medium text-gray-600 hover:text-green-600 hidden sm:block"
-            >
-              장바구니
-            </Link>
-
-            {/* AI 주문하기 버튼 */}
-            <button
-              onClick={toggleAIChat}
-              className="flex items-center gap-2 bg-green-100 text-green-800 px-4 py-2 rounded-full font-bold hover:bg-green-200 transition-colors shadow-sm"
-            >
-              <span>🤖</span>
-              <span className="hidden xs:inline">AI 주문</span>
-            </button>
-
-            {/* 로그아웃 버튼 */}
+          user?.authority === 'ROLE_ADMIN' ? (
             <button
               onClick={handleLogout}
-              className="text-sm font-medium text-gray-600 hover:text-red-600 hidden sm:block"
+              className="text-sm font-medium text-gray-600 hover:text-red-600"
             >
               로그아웃
             </button>
-          </>
+          ) : (
+            // ----------------------------------------
+            // 일반 사용자: 사용자명(마이페이지), 장바구니, AI주문, 로그아웃
+            // ----------------------------------------
+            <>
+              {/* 사용자명 (클릭 시 마이페이지) */}
+              {(user?.displayName || user?.username) && (
+                <Link
+                  to="/mypage"
+                  className="flex items-center gap-2 px-3 py-2 rounded-lg bg-gray-100 hover:bg-gray-200 transition-colors hidden sm:flex"
+                >
+                  <span className="w-7 h-7 bg-green-600 text-white rounded-full flex items-center justify-center text-sm font-bold">
+                    {(user.displayName || user.username || '').charAt(0).toUpperCase()}
+                  </span>
+                  <span className="text-sm font-medium text-gray-700">
+                    {user.displayName || user.username}님
+                  </span>
+                </Link>
+              )}
+
+
+              {/* 주문 내역 버튼 */}
+              <Link
+                to="/orders"
+                className="text-sm font-medium text-gray-600 hover:text-green-600 hidden sm:block"
+              >
+                주문 내역
+              </Link>
+
+              {/* AI 주문하기 버튼 */}
+              <button
+                onClick={toggleAIChat}
+                className="flex items-center gap-2 bg-green-100 text-green-800 px-4 py-2 rounded-full font-bold hover:bg-green-200 transition-colors shadow-sm"
+              >
+                <span>🤖</span>
+                <span className="hidden xs:inline">AI 주문</span>
+              </button>
+
+              {/* 로그아웃 버튼 */}
+              <button
+                onClick={handleLogout}
+                className="text-sm font-medium text-gray-600 hover:text-red-600 hidden sm:block"
+              >
+                로그아웃
+              </button>
+            </>
+          )
         ) : (
           // ----------------------------------------
           // 비로그인 상태: 로그인 버튼만
@@ -162,10 +179,11 @@ const App: React.FC = () => {
             </ProtectedRoute>
           } />
 
-          {/* 장바구니 */}
-          <Route path="/cart" element={
+
+          {/* 주문 내역 */}
+          <Route path="/orders" element={
             <ProtectedRoute>
-              <CartPage />
+              <OrderHistoryPage />
             </ProtectedRoute>
           } />
 
@@ -173,6 +191,13 @@ const App: React.FC = () => {
           <Route path="/mypage" element={
             <ProtectedRoute>
               <MyPage />
+            </ProtectedRoute>
+          } />
+
+          {/* 관리자 페이지 (관리자만 접근 가능) */}
+          <Route path="/admin/orders" element={
+            <ProtectedRoute allowAdmin={true}>
+              <AdminOrderPage />
             </ProtectedRoute>
           } />
 

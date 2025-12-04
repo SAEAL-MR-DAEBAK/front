@@ -21,7 +21,20 @@ const getDinnerEmoji = (name: string): string => {
 };
 
 export const DinnerStep: React.FC = () => {
-  const { selectedDinner, setDinner, nextStep, prevStep } = useOrderFlowStore();
+  const { 
+    selectedDinner, 
+    createdProduct,
+    setDinner, 
+    setStyle,
+    setCreatedProduct,
+    setMenuCustomizations,
+    setAdditionalMenuItems,
+    nextStep, 
+    prevStep 
+  } = useOrderFlowStore();
+  
+  // 현재 선택된 디너의 가격 계산
+  const currentPrice = selectedDinner ? selectedDinner.basePrice : 0;
 
   // ----------------------------------------
   // 상태 관리
@@ -55,7 +68,27 @@ export const DinnerStep: React.FC = () => {
   // ----------------------------------------
   // 이벤트 핸들러
   // ----------------------------------------
-  const handleSelectDinner = (dinner: DinnerResponseDto) => {
+  const handleSelectDinner = async (dinner: DinnerResponseDto) => {
+    // 디너가 변경되면 관련된 모든 상태 초기화 및 이전 Product 삭제
+    if (selectedDinner && selectedDinner.id !== dinner.id) {
+      // 다른 디너를 선택한 경우 이전 Product 삭제
+      if (createdProduct) {
+        try {
+          await apiClient.delete(`/products/${createdProduct.id}`);
+        } catch (err: any) {
+          // 삭제 실패해도 계속 진행 (이미 삭제되었거나 없는 경우)
+          // 404 에러는 무시 (이미 삭제된 경우)
+          if (err.response?.status !== 404) {
+            console.warn('이전 Product 삭제 실패:', err);
+          }
+        }
+      }
+      // 상태 초기화
+      setStyle(null);
+      setCreatedProduct(null);
+      setMenuCustomizations([]);
+      setAdditionalMenuItems([]);
+    }
     setDinner(dinner);
   };
 
@@ -155,6 +188,16 @@ export const DinnerStep: React.FC = () => {
       {dinners.length === 0 && (
         <div className="text-center py-12">
           <p className="text-gray-500">등록된 디너가 없습니다.</p>
+        </div>
+      )}
+
+      {/* 현재 가격 표시 */}
+      {selectedDinner && (
+        <div className="bg-green-50 rounded-xl p-4 mb-6 text-center">
+          <p className="text-sm text-gray-500 mb-1">현재 선택된 가격</p>
+          <p className="text-2xl font-bold text-green-600">
+            ₩{currentPrice.toLocaleString()}
+          </p>
         </div>
       )}
 

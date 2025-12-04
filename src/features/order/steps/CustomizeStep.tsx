@@ -1,26 +1,39 @@
 import React, { useState, useEffect } from 'react';
 import apiClient from '../../../lib/axios';
 import { useOrderFlowStore } from '../../../stores/useOrderFlowStore';
-import { DinnerMenuItemResponseDto } from '../../../types/api';
+import { DinnerMenuItemResponseDto, MenuItemResponseDto } from '../../../types/api';
+import { QuantitySelector } from './components/QuantitySelector';
+import { MenuConfigurationSection } from './components/MenuConfigurationSection';
+import { AdditionalMenuSection } from './components/AdditionalMenuSection';
+import { SpecialRequestSection } from './components/SpecialRequestSection';
+import { usePriceCalculator } from './hooks/usePriceCalculator';
 
 // ============================================
 // CustomizeStep 컴포넌트
 // ============================================
-// 역할: 3단계 - 주문 커스터마이징 (수량, 메뉴 구성, 특별 요청)
-// 순서: 디너선택 → [현재] 주문옵션 → 서빙스타일 → 결제
+// 역할: 4단계 - 주문 커스터마이징 (수량, 메뉴 구성, 특별 요청)
+// 순서: 디너선택 → 서빙스타일 → [현재] 주문옵션 → 결제
 // API: GET /api/dinners/{dinnerId}/default-menu-items
 // ============================================
 
 export const CustomizeStep: React.FC = () => {
   const {
     selectedDinner,
+    selectedStyle,
+    createdProduct,
     quantity,
     memo,
     menuCustomizations,
+    additionalMenuItems,
     setQuantity,
     setMemo,
     setMenuCustomizations,
     updateMenuItemQuantity,
+    addAdditionalMenuItem,
+    removeAdditionalMenuItem,
+    updateAdditionalMenuItemQuantity,
+    setAdditionalMenuItems,
+    setCreatedProduct,
     nextStep,
     prevStep,
   } = useOrderFlowStore();
@@ -30,6 +43,8 @@ export const CustomizeStep: React.FC = () => {
   // ----------------------------------------
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [allMenuItems, setAllMenuItems] = useState<MenuItemResponseDto[]>([]);
+  const [isUpdatingProduct, setIsUpdatingProduct] = useState(false);
 
   // ----------------------------------------
   // API 호출: 디너의 기본 메뉴 아이템 로드
@@ -37,6 +52,12 @@ export const CustomizeStep: React.FC = () => {
   useEffect(() => {
     const fetchMenuItems = async () => {
       if (!selectedDinner) return;
+
+      // 이미 menuCustomizations가 있으면 다시 로드하지 않음 (상태 보존)
+      if (menuCustomizations.length > 0) {
+        setIsLoading(false);
+        return;
+      }
 
       try {
         setIsLoading(true);
@@ -62,7 +83,141 @@ export const CustomizeStep: React.FC = () => {
     };
 
     fetchMenuItems();
-  }, [selectedDinner, setMenuCustomizations]);
+  }, [selectedDinner, setMenuCustomizations, menuCustomizations.length]);
+
+  // ----------------------------------------
+  // API 호출: 모든 메뉴 아이템 로드 (추가 메뉴 검색용)
+  // ----------------------------------------
+  useEffect(() => {
+    const fetchAllMenuItems = async () => {
+      try {
+        const response = await apiClient.get<MenuItemResponseDto[]>(
+          '/menu-items/getAllMenuItems'
+        );
+        setAllMenuItems(response.data);
+      } catch (err) {
+        console.error('전체 메뉴 아이템 로딩 실패:', err);
+      }
+    };
+
+    fetchAllMenuItems();
+  }, []);
+
+  // ----------------------------------------
+  // 가격 계산
+  // ----------------------------------------
+  const { currentPrice } = usePriceCalculator({
+    selectedDinner,
+    selectedStyle,
+    quantity,
+    menuCustomizations,
+    additionalMenuItems,
+    allMenuItems,
+  });
+
+  // ----------------------------------------
+  // 이벤트 핸들러
+  // ----------------------------------------
+  const handleMenuItemSelect = (menuItem: MenuItemResponseDto) => {
+    addAdditionalMenuItem(menuItem.id, menuItem.name);
+  };
+
+  // 다음 단계로 넘어가기 전에 product 업데이트
+  const handleNext = async () => {
+    if (!createdProduct) {
+      alert('상품 정보가 없습니다. 이전 단계로 돌아가주세요.');
+      return;
+    }
+
+    try {
+      setIsUpdatingProduct(true);
+      setError(null);
+
+      // 1. 메뉴 구성 변경: 기본 메뉴의 수량 변경 반영 (0인 것은 제외하고 기본 수량으로 되돌림)
+      for (const customization of menuCustomizations) {
+        const defaultMenuItem = createdProduct.productMenuItems.find(
+          (pmi) => pmi.menuItemId === customization.menuItemId
+        );
+
+        // 수량이 0이면 기본 수량으로 되돌리기 (삭제하지 않음)
+        if (customization.currentQuantity === 0) {
+          if (defaultMenuItem) {
+            await apiClient.patch(
+              `/products/${createdProduct.id}/menu-items/${customization.menuItemId}`,
+              { quantity: customization.defaultQuantity }
+            );
+          }
+        } else if (defaultMenuItem && customization.currentQuantity !== customization.defaultQuantity) {
+          // 수량이 변경된 경우 업데이트
+          await apiClient.patch(
+            `/products/${createdProduct.id}/menu-items/${customization.menuItemId}`,
+            { quantity: customization.currentQuantity }
+          );
+        }
+      }
+
+      // 2. 추가 메뉴 아이템 추가/수정 (0인 것은 삭제)
+      for (const additionalItem of additionalMenuItems) {
+        const existingItem = createdProduct.productMenuItems.find(
+          (pmi) => pmi.menuItemId === additionalItem.menuItemId
+        );
+
+        if (additionalItem.quantity === 0) {
+          // 수량이 0이면 삭제 (추가 메뉴는 삭제 가능)
+          if (existingItem) {
+            try {
+              await apiClient.delete(
+                `/products/${createdProduct.id}/menu-items/${additionalItem.menuItemId}`
+              );
+            } catch (err: any) {
+              // 404 에러는 무시 (이미 삭제된 경우)
+              if (err.response?.status !== 404) {
+                console.warn('추가 메뉴 아이템 삭제 실패:', err);
+              }
+            }
+          }
+        } else if (!existingItem) {
+          // 새로운 메뉴 아이템 추가
+          await apiClient.post(
+            `/products/${createdProduct.id}/menu-items`,
+            {
+              menuItemId: additionalItem.menuItemId,
+              quantity: additionalItem.quantity,
+            }
+          );
+        } else {
+          // 이미 있는 경우 수량만 업데이트
+          await apiClient.patch(
+            `/products/${createdProduct.id}/menu-items/${additionalItem.menuItemId}`,
+            { quantity: additionalItem.quantity }
+          );
+        }
+      }
+
+      // 3. 업데이트된 product의 menuItems 조회
+      const menuItemsResponse = await apiClient.get(
+        `/products/${createdProduct.id}/menu-items`
+      );
+
+      // product 정보 업데이트 (menuItems만 업데이트)
+      const updatedProduct = {
+        ...createdProduct,
+        productMenuItems: menuItemsResponse.data,
+      };
+
+      setCreatedProduct(updatedProduct);
+
+      // 다음 단계로 이동
+      nextStep();
+    } catch (err: any) {
+      console.error('상품 업데이트 실패:', err);
+      const errorMessage = err.response?.data?.message || '상품 업데이트에 실패했습니다. 다시 시도해주세요.';
+      setError(errorMessage);
+      alert(errorMessage);
+    } finally {
+      setIsUpdatingProduct(false);
+    }
+  };
 
   // ----------------------------------------
   // 렌더링: 로딩
@@ -108,112 +263,96 @@ export const CustomizeStep: React.FC = () => {
         <p className="text-gray-500">수량, 메뉴 구성을 변경할 수 있습니다</p>
       </div>
 
-      {/* 선택 요약 (서빙스타일 선택 전이므로 디너 정보만 표시) */}
+      {/* 선택 요약 및 현재 가격 */}
       <div className="bg-green-50 rounded-xl p-4 mb-6">
-        <div className="flex items-center gap-3">
-          <span className="text-2xl">🍽️</span>
-          <div>
-            <p className="font-bold">{selectedDinner?.dinnerName}</p>
-            <p className="text-sm text-gray-500">
-              기본 가격: ₩{selectedDinner?.basePrice.toLocaleString()}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <span className="text-2xl">🍽️</span>
+            <div>
+              <p className="font-bold">{selectedDinner?.dinnerName}</p>
+              <p className="text-sm text-gray-500">{selectedStyle?.styleName} 스타일</p>
+            </div>
+          </div>
+          <div className="text-right">
+            <p className="text-sm text-gray-500 mb-1">현재 총 가격</p>
+            <p className="text-2xl font-bold text-green-600">
+              ₩{currentPrice.toLocaleString()}
             </p>
           </div>
         </div>
       </div>
 
       {/* 수량 조절 */}
-      <div className="bg-white rounded-2xl shadow-lg p-6 mb-6">
-        <h3 className="font-bold text-gray-700 mb-4">주문 수량</h3>
-        <div className="flex items-center justify-center gap-6">
-          <button
-            onClick={() => setQuantity(quantity - 1)}
-            disabled={quantity <= 1}
-            className="w-12 h-12 rounded-full bg-gray-200 hover:bg-gray-300 text-xl font-bold disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            -
-          </button>
-          <span className="text-3xl font-bold w-16 text-center">{quantity}</span>
-          <button
-            onClick={() => setQuantity(quantity + 1)}
-            className="w-12 h-12 rounded-full bg-gray-200 hover:bg-gray-300 text-xl font-bold"
-          >
-            +
-          </button>
-        </div>
-      </div>
+      <QuantitySelector
+        quantity={quantity}
+        onDecrease={() => setQuantity(quantity - 1)}
+        onIncrease={() => setQuantity(quantity + 1)}
+      />
 
-      {/* 메뉴 아이템 커스터마이징 */}
-      {menuCustomizations.length > 0 && (
-        <div className="bg-white rounded-2xl shadow-lg p-6 mb-6">
-          <h3 className="font-bold text-gray-700 mb-4">메뉴 구성 변경</h3>
-          <p className="text-sm text-gray-500 mb-4">
-            각 항목의 수량을 조절할 수 있습니다 (추가 비용 발생 가능)
-          </p>
-          <div className="space-y-4">
-            {menuCustomizations.map((item) => (
-              <div
-                key={item.menuItemId}
-                className="flex items-center justify-between p-3 bg-gray-50 rounded-xl"
-              >
-                <div>
-                  <p className="font-medium">{item.menuItemName}</p>
-                  <p className="text-xs text-gray-500">
-                    기본: {item.defaultQuantity}개
-                  </p>
-                </div>
-                <div className="flex items-center gap-3">
-                  <button
-                    onClick={() =>
-                      updateMenuItemQuantity(item.menuItemId, item.currentQuantity - 1)
-                    }
-                    disabled={item.currentQuantity <= 0}
-                    className="w-8 h-8 rounded-full bg-gray-200 hover:bg-gray-300 text-lg font-bold disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    -
-                  </button>
-                  <span className="w-8 text-center font-bold">
-                    {item.currentQuantity}
-                  </span>
-                  <button
-                    onClick={() =>
-                      updateMenuItemQuantity(item.menuItemId, item.currentQuantity + 1)
-                    }
-                    className="w-8 h-8 rounded-full bg-gray-200 hover:bg-gray-300 text-lg font-bold"
-                  >
-                    +
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+      {/* 메뉴 구성 변경 */}
+      <MenuConfigurationSection
+        menuCustomizations={menuCustomizations}
+        allMenuItems={allMenuItems}
+        orderQuantity={quantity}
+        onQuantityChange={updateMenuItemQuantity}
+      />
+
+      {/* 추가 메뉴 구성 변경 */}
+      <AdditionalMenuSection
+        allMenuItems={allMenuItems}
+        additionalMenuItems={additionalMenuItems}
+        menuCustomizations={menuCustomizations}
+        orderQuantity={quantity}
+        onAddMenuItem={handleMenuItemSelect}
+        onRemoveMenuItem={removeAdditionalMenuItem}
+        onUpdateQuantity={updateAdditionalMenuItemQuantity}
+      />
 
       {/* 특별 요청사항 */}
-      <div className="bg-white rounded-2xl shadow-lg p-6 mb-8">
-        <h3 className="font-bold text-gray-700 mb-4">특별 요청사항</h3>
-        <textarea
-          value={memo}
-          onChange={(e) => setMemo(e.target.value)}
-          placeholder="예: 샴페인을 2병으로 변경해주세요, 커피는 빼주세요"
-          className="w-full p-4 border border-gray-200 rounded-xl resize-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
-          rows={3}
-        />
-      </div>
+      <SpecialRequestSection memo={memo} onMemoChange={setMemo} />
 
       {/* 버튼 영역 */}
       <div className="flex gap-4">
         <button
-          onClick={prevStep}
+          onClick={() => {
+            // 메뉴 구성이 변경되었는지 확인
+            const hasMenuChanges = menuCustomizations.some(
+              (item) => item.currentQuantity !== item.defaultQuantity
+            ) || additionalMenuItems.length > 0;
+
+            if (hasMenuChanges) {
+              const confirmed = window.confirm(
+                '이전 단계로 돌아가면 수정한 메뉴 구성이 초기화됩니다. 계속하시겠습니까?'
+              );
+              if (confirmed) {
+                // 메뉴 구성 초기화
+                setMenuCustomizations(
+                  menuCustomizations.map((item) => ({
+                    ...item,
+                    currentQuantity: item.defaultQuantity,
+                  }))
+                );
+                setAdditionalMenuItems([]);
+                prevStep();
+              }
+            } else {
+              prevStep();
+            }
+          }}
           className="flex-1 py-4 rounded-xl text-lg font-bold border-2 border-gray-300 text-gray-600 hover:bg-gray-50 transition-all"
         >
           이전
         </button>
         <button
-          onClick={nextStep}
-          className="flex-1 py-4 rounded-xl text-lg font-bold bg-green-600 text-white hover:bg-green-700 transition-all"
+          onClick={handleNext}
+          disabled={isUpdatingProduct}
+          className={`flex-1 py-4 rounded-xl text-lg font-bold transition-all ${
+            isUpdatingProduct
+              ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+              : 'bg-green-600 text-white hover:bg-green-700'
+          }`}
         >
-          다음 단계로
+          {isUpdatingProduct ? '업데이트 중...' : '다음 단계로'}
         </button>
       </div>
     </div>

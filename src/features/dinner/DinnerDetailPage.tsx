@@ -5,7 +5,6 @@ import { useParams, useNavigate } from 'react-router-dom';
 // Import
 // ============================================
 import apiClient from '../../lib/axios';
-import { useCartStore } from '../../stores/useCartStore';
 import {
   DinnerResponseDto,
   ServingStyleResponseDto,
@@ -16,7 +15,7 @@ import {
 // ============================================
 // DinnerDetailPage 컴포넌트
 // ============================================
-// 역할: 디너 상세 페이지 - 서빙 스타일 선택 및 장바구니 담기
+// 역할: 디너 상세 페이지 - 서빙 스타일 선택 및 주문하기
 // API:
 //   - GET /api/dinners/getAllDinners (디너 정보)
 //   - GET /api/serving-styles/getAllServingStyles (서빙 스타일 목록)
@@ -27,8 +26,6 @@ export const DinnerDetailPage: React.FC = () => {
   const { dinnerId } = useParams<{ dinnerId: string }>();
   const navigate = useNavigate();
 
-  // Zustand 스토어에서 장바구니 추가 함수
-  const addToCartStore = useCartStore((state) => state.addToCart);
 
   // ----------------------------------------
   // 상태 관리
@@ -120,56 +117,11 @@ export const DinnerDetailPage: React.FC = () => {
   const isChampagneDinner = dinner?.dinnerName?.toLowerCase().includes('champagne');
 
   // ----------------------------------------
-  // 이벤트 핸들러: 장바구니 담기
+  // 이벤트 핸들러: 주문하기 (주문 플로우로 이동)
   // ----------------------------------------
-  const handleAddToCart = async () => {
-    // 유효성 검사
-    if (!selectedStyleId) {
-      alert('서빙 스타일을 선택해주세요.');
-      return;
-    }
-    if (!dinner) {
-      alert('디너 정보를 불러오는 중입니다.');
-      return;
-    }
-
-    try {
-      // 1. 백엔드에 Product 생성 요청
-      const productPayload: CreateProductRequest = {
-        dinnerId: dinner.id,
-        servingStyleId: selectedStyleId,
-        quantity: quantity,
-        memo: memo || undefined,
-        productName: `${dinner.dinnerName} (${selectedStyle?.styleName || ''})`,
-      };
-
-      // POST /api/products/createProduct
-      const response = await apiClient.post<ProductResponseDto>(
-        '/products/createProduct',
-        productPayload
-      );
-      const createdProduct = response.data;
-
-      // 2. Zustand 스토어에 저장 (프론트엔드 상태)
-      addToCartStore({
-        productId: createdProduct.id,
-        productName: createdProduct.productName,
-        quantity: createdProduct.quantity,
-        totalPrice: createdProduct.totalPrice,
-        styleName: createdProduct.servingStyleName,
-      });
-
-      // 3. 사용자 안내 및 이동
-      if (window.confirm('장바구니에 담겼습니다! 장바구니로 이동하시겠습니까?')) {
-        navigate('/cart');
-      } else {
-        navigate('/');
-      }
-
-    } catch (err) {
-      console.error('장바구니 담기 실패:', err);
-      alert('주문 처리에 실패했습니다. 다시 시도해주세요.');
-    }
+  const handleOrder = () => {
+    // 주문 플로우 페이지로 이동 (주문 플로우에서 디너와 스타일을 선택하도록 함)
+    navigate('/');
   };
 
   // ----------------------------------------
@@ -342,9 +294,9 @@ export const DinnerDetailPage: React.FC = () => {
             </button>
           </div>
 
-          {/* 카트 담기 버튼 */}
+          {/* 주문하기 버튼 */}
           <button
-            onClick={handleAddToCart}
+            onClick={handleOrder}
             disabled={!selectedStyleId || stylesLoading || !!stylesError}
             className={`font-bold py-3 px-8 rounded-lg transition-colors flex-1 ml-6 ${
               selectedStyleId && !stylesLoading && !stylesError
@@ -352,7 +304,7 @@ export const DinnerDetailPage: React.FC = () => {
                 : 'bg-gray-300 text-gray-500 cursor-not-allowed'
             }`}
           >
-            카트에 담기 • ₩{totalPrice.toLocaleString()}
+            주문하기 • ₩{totalPrice.toLocaleString()}
           </button>
         </div>
       </div>

@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { DinnerResponseDto, ServingStyleResponseDto } from '../types/api';
+import { DinnerResponseDto, ServingStyleResponseDto, ProductResponseDto } from '../types/api';
 
 // ============================================
 // useOrderFlowStore
@@ -12,8 +12,8 @@ import { DinnerResponseDto, ServingStyleResponseDto } from '../types/api';
 // - intro: 웰컴 화면 (미스터 대박 소개)
 // - address: 배달 주소 선택
 // - dinner: 디너 종류 선택
-// - customize: 수량, 메뉴 커스터마이징 (서빙스타일 유효성 검사를 위해 먼저 진행)
-// - style: 서빙 스타일 선택 (와인 포함 여부 등에 따라 옵션 제한)
+// - style: 서빙 스타일 선택
+// - customize: 수량, 메뉴 커스터마이징 (디너와 서빙스타일 선택 후 진행)
 // - checkout: 결제 확인
 export type OrderStep = 'intro' | 'address' | 'dinner' | 'style' | 'customize' | 'checkout';
 
@@ -23,6 +23,13 @@ export interface MenuItemCustomization {
   menuItemName: string;
   defaultQuantity: number;
   currentQuantity: number;
+}
+
+// 추가 메뉴 아이템 (원래 디너에 포함되지 않는 메뉴)
+export interface AdditionalMenuItem {
+  menuItemId: string;
+  menuItemName: string;
+  quantity: number;
 }
 
 interface OrderFlowState {
@@ -43,10 +50,14 @@ interface OrderFlowState {
   // 3단계: 서빙 스타일
   selectedStyle: ServingStyleResponseDto | null;
 
+  // 생성된 Product (style 단계에서 생성)
+  createdProduct: ProductResponseDto | null;
+
   // 4단계: 커스터마이징
   quantity: number;
   memo: string;
   menuCustomizations: MenuItemCustomization[];
+  additionalMenuItems: AdditionalMenuItem[];
 
   // ----------------------------------------
   // 액션
@@ -59,11 +70,16 @@ interface OrderFlowState {
   // 데이터 설정
   setAddress: (address: string) => void;
   setDinner: (dinner: DinnerResponseDto) => void;
-  setStyle: (style: ServingStyleResponseDto) => void;
+  setStyle: (style: ServingStyleResponseDto | null) => void;
+  setCreatedProduct: (product: ProductResponseDto | null) => void;
   setQuantity: (quantity: number) => void;
   setMemo: (memo: string) => void;
   setMenuCustomizations: (customizations: MenuItemCustomization[]) => void;
   updateMenuItemQuantity: (menuItemId: string, quantity: number) => void;
+  setAdditionalMenuItems: (items: AdditionalMenuItem[]) => void;
+  addAdditionalMenuItem: (menuItemId: string, menuItemName: string) => void;
+  removeAdditionalMenuItem: (menuItemId: string) => void;
+  updateAdditionalMenuItemQuantity: (menuItemId: string, quantity: number) => void;
 
   // 초기화
   resetOrder: () => void;
@@ -73,8 +89,8 @@ interface OrderFlowState {
 }
 
 // 단계 순서 정의 (intro부터 시작)
-// customize → style 순서: 메뉴 구성에 따라 서빙스타일 옵션 제한 가능
-const STEP_ORDER: OrderStep[] = ['intro', 'address', 'dinner', 'customize', 'style', 'checkout'];
+// dinner → style → customize 순서: 디너와 서빙스타일 선택 후 주문 옵션 커스터마이징
+const STEP_ORDER: OrderStep[] = ['intro', 'address', 'dinner', 'style', 'customize', 'checkout'];
 
 export const useOrderFlowStore = create<OrderFlowState>((set, get) => ({
   // ----------------------------------------
@@ -84,9 +100,11 @@ export const useOrderFlowStore = create<OrderFlowState>((set, get) => ({
   selectedAddress: '',
   selectedDinner: null,
   selectedStyle: null,
+  createdProduct: null,
   quantity: 1,
   memo: '',
   menuCustomizations: [],
+  additionalMenuItems: [],
 
   // ----------------------------------------
   // 단계 이동 액션
@@ -116,13 +134,17 @@ export const useOrderFlowStore = create<OrderFlowState>((set, get) => ({
 
   setDinner: (dinner) => set({ selectedDinner: dinner }),
 
-  setStyle: (style) => set({ selectedStyle: style }),
+  setStyle: (style) => set({ selectedStyle: style || null }),
+
+  setCreatedProduct: (product) => set({ createdProduct: product }),
 
   setQuantity: (quantity) => set({ quantity: Math.max(1, quantity) }),
 
   setMemo: (memo) => set({ memo }),
 
   setMenuCustomizations: (customizations) => set({ menuCustomizations: customizations }),
+
+  setAdditionalMenuItems: (items) => set({ additionalMenuItems: items }),
 
   updateMenuItemQuantity: (menuItemId, quantity) => {
     const { menuCustomizations } = get();
@@ -134,6 +156,39 @@ export const useOrderFlowStore = create<OrderFlowState>((set, get) => ({
     set({ menuCustomizations: updated });
   },
 
+  addAdditionalMenuItem: (menuItemId, menuItemName) => {
+    const { additionalMenuItems } = get();
+    // 이미 추가된 메뉴 아이템인지 확인
+    const exists = additionalMenuItems.some((item) => item.menuItemId === menuItemId);
+    if (!exists) {
+      set({
+        additionalMenuItems: [
+          ...additionalMenuItems,
+          { menuItemId, menuItemName, quantity: 1 },
+        ],
+      });
+    }
+  },
+
+  removeAdditionalMenuItem: (menuItemId) => {
+    const { additionalMenuItems } = get();
+    set({
+      additionalMenuItems: additionalMenuItems.filter(
+        (item) => item.menuItemId !== menuItemId
+      ),
+    });
+  },
+
+  updateAdditionalMenuItemQuantity: (menuItemId, quantity) => {
+    const { additionalMenuItems } = get();
+    const updated = additionalMenuItems.map((item) =>
+      item.menuItemId === menuItemId
+        ? { ...item, quantity: Math.max(1, quantity) }
+        : item
+    );
+    set({ additionalMenuItems: updated });
+  },
+
   // ----------------------------------------
   // 초기화 (intro 화면으로 돌아감)
   // ----------------------------------------
@@ -143,9 +198,11 @@ export const useOrderFlowStore = create<OrderFlowState>((set, get) => ({
       selectedAddress: '',
       selectedDinner: null,
       selectedStyle: null,
+      createdProduct: null,
       quantity: 1,
       memo: '',
       menuCustomizations: [],
+      additionalMenuItems: [],
     }),
 
   // ----------------------------------------

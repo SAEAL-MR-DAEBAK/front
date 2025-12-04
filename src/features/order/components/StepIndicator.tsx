@@ -12,12 +12,12 @@ interface StepIndicatorProps {
 }
 
 // 단계 정의 (intro 제외 - intro는 인디케이터에 표시하지 않음)
-// 순서: 주소 → 디너 → 주문옵션 → 서빙스타일 → 결제
+// 순서: 주소 → 디너 → 서빙스타일 → 주문옵션 → 결제
 const STEPS: { key: OrderStep; label: string }[] = [
   { key: 'address', label: '배달주소' },
   { key: 'dinner', label: '디너선택' },
-  { key: 'customize', label: '주문옵션' },
   { key: 'style', label: '서빙스타일' },
+  { key: 'customize', label: '주문옵션' },
   { key: 'checkout', label: '결제' },
 ];
 

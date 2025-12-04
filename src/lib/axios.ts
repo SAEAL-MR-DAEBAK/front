@@ -32,12 +32,27 @@ apiClient.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response?.status === 401) {
-      // 인증 실패 시 토큰 및 인증 정보 제거
-      localStorage.removeItem('accessToken');
-      localStorage.removeItem('mr-daebak-auth'); // Zustand persist 데이터도 제거
+      const requestUrl = error.config?.url || '';
+      
+      // 결제 관련 요청(/carts/createCart, /carts/*/checkout), 
+      // 관리자 요청(/orders/admin/*), 
+      // 사용자 관리 요청(/users/*)은 리다이렉트하지 않고 에러만 반환 (컴포넌트에서 처리)
+      const isCheckoutRequest = 
+        requestUrl.includes('/carts/createCart') || 
+        requestUrl.includes('/carts/') && requestUrl.includes('/checkout');
+      
+      const isAdminRequest = requestUrl.includes('/orders/admin/');
+      
+      const isUserRequest = requestUrl.includes('/users/');
+      
+      if (!isCheckoutRequest && !isAdminRequest && !isUserRequest) {
+        // 인증 실패 시 토큰 및 인증 정보 제거
+        localStorage.removeItem('accessToken');
+        localStorage.removeItem('mr-daebak-auth'); // Zustand persist 데이터도 제거
 
-      // 로그인 페이지로 리다이렉트
-      window.location.href = '/login';
+        // 로그인 페이지로 리다이렉트
+        window.location.href = '/login';
+      }
     }
     return Promise.reject(error);
   }

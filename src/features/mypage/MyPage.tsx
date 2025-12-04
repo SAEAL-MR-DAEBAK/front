@@ -1,10 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import apiClient from '../../lib/axios';
 import { useAuthStore } from '../../stores/useAuthStore';
 import {
   UpdateUserProfileRequest,
   PaymentMethodDto,
   AddPaymentMethodRequest,
+  UserCardResponseDto,
+  AddCardRequest,
 } from '../../types/api';
 
 // ============================================
@@ -53,7 +56,6 @@ export const MyPage: React.FC = () => {
   const [profileForm, setProfileForm] = useState<UpdateUserProfileRequest>({
     displayName: '',
     phoneNumber: '',
-    address: '',
     email: '',
   });
   const [isEditingProfile, setIsEditingProfile] = useState(false);
@@ -62,16 +64,38 @@ export const MyPage: React.FC = () => {
   // ----------------------------------------
   // 상태 관리: 결제수단
   // ----------------------------------------
-  const [paymentMethods, setPaymentMethods] = useState<PaymentMethodDto[]>([]);
+  const [paymentMethods, setPaymentMethods] = useState<UserCardResponseDto[]>([]);
   const [isAddingPayment, setIsAddingPayment] = useState(false);
-  const [paymentForm, setPaymentForm] = useState<AddPaymentMethodRequest>({
+  const [paymentForm, setPaymentForm] = useState<{
+    cardBrand: string;
+    cardNumber: string;
+    expiryMonth: string;
+    expiryYear: string;
+    cardHolderName: string;
+    cvv: string;
+    isDefault: boolean;
+  }>({
+    cardBrand: '',
     cardNumber: '',
-    cardHolder: '',
-    expiryDate: '',
+    expiryMonth: '',
+    expiryYear: '',
+    cardHolderName: '',
     cvv: '',
     isDefault: false,
   });
   const [isSavingPayment, setIsSavingPayment] = useState(false);
+
+  // ----------------------------------------
+  // 상태 관리: 주소
+  // ----------------------------------------
+  const [addresses, setAddresses] = useState<string[]>([]);
+  const [isAddingAddress, setIsAddingAddress] = useState(false);
+  const [addressForm, setAddressForm] = useState<{
+    address: string;
+  }>({
+    address: '',
+  });
+  const [isSavingAddress, setIsSavingAddress] = useState(false);
 
   // ----------------------------------------
   // 초기 데이터 로드
@@ -81,17 +105,31 @@ export const MyPage: React.FC = () => {
       setProfileForm({
         displayName: user.displayName || '',
         phoneNumber: user.phoneNumber || '',
-        address: user.address || '',
         email: user.email || '',
       });
     }
 
-    // TODO: 결제수단 목록 API 호출
-    // const fetchPaymentMethods = async () => {
-    //   const response = await apiClient.get<PaymentMethodDto[]>('/users/me/payment-methods');
-    //   setPaymentMethods(response.data);
-    // };
-    // fetchPaymentMethods();
+    // 결제수단 목록 API 호출
+    const fetchPaymentMethods = async () => {
+      try {
+        const response = await apiClient.get<UserCardResponseDto[]>('/users/cards');
+        setPaymentMethods(response.data);
+      } catch (err) {
+        console.error('결제수단 목록 조회 실패:', err);
+      }
+    };
+    fetchPaymentMethods();
+
+    // 주소 목록 API 호출
+    const fetchAddresses = async () => {
+      try {
+        const response = await apiClient.get<string[]>('/users/addresses');
+        setAddresses(response.data);
+      } catch (err) {
+        console.error('주소 목록 조회 실패:', err);
+      }
+    };
+    fetchAddresses();
   }, [user]);
 
   // ----------------------------------------
@@ -125,7 +163,6 @@ export const MyPage: React.FC = () => {
       setProfileForm({
         displayName: user.displayName || '',
         phoneNumber: user.phoneNumber || '',
-        address: user.address || '',
         email: user.email || '',
       });
     }
@@ -135,17 +172,21 @@ export const MyPage: React.FC = () => {
   // ----------------------------------------
   // 핸들러: 결제수단 관리
   // ----------------------------------------
-  const handlePaymentFormChange = (field: keyof AddPaymentMethodRequest, value: string | boolean) => {
+  const handlePaymentFormChange = (field: string, value: string | boolean) => {
     if (field === 'cardNumber' && typeof value === 'string') {
-      value = formatCardNumber(value);
+      const formatted = formatCardNumber(value);
+      // 카드 브랜드 자동 감지
+      const cardType = detectCardType(formatted);
+      setPaymentForm((prev) => ({ ...prev, cardNumber: formatted, cardBrand: cardType }));
+    } else if (field === 'expiryMonth' && typeof value === 'string') {
+      setPaymentForm((prev) => ({ ...prev, expiryMonth: value.replace(/\D/g, '').slice(0, 2) }));
+    } else if (field === 'expiryYear' && typeof value === 'string') {
+      setPaymentForm((prev) => ({ ...prev, expiryYear: value.replace(/\D/g, '').slice(0, 4) }));
+    } else if (field === 'cvv' && typeof value === 'string') {
+      setPaymentForm((prev) => ({ ...prev, cvv: value.replace(/\D/g, '').slice(0, 4) }));
+    } else {
+      setPaymentForm((prev) => ({ ...prev, [field]: value }));
     }
-    if (field === 'expiryDate' && typeof value === 'string') {
-      value = formatExpiryDate(value);
-    }
-    if (field === 'cvv' && typeof value === 'string') {
-      value = value.replace(/\D/g, '').slice(0, 4);
-    }
-    setPaymentForm((prev) => ({ ...prev, [field]: value }));
   };
 
   const handleAddPaymentMethod = async () => {
@@ -154,12 +195,12 @@ export const MyPage: React.FC = () => {
       alert('올바른 카드번호를 입력해주세요.');
       return;
     }
-    if (!paymentForm.cardHolder.trim()) {
+    if (!paymentForm.cardHolderName.trim()) {
       alert('카드 소유자명을 입력해주세요.');
       return;
     }
-    if (paymentForm.expiryDate.length < 5) {
-      alert('올바른 만료일을 입력해주세요.');
+    if (!paymentForm.expiryMonth || !paymentForm.expiryYear) {
+      alert('만료일을 입력해주세요.');
       return;
     }
     if (paymentForm.cvv.length < 3) {
@@ -169,35 +210,35 @@ export const MyPage: React.FC = () => {
 
     setIsSavingPayment(true);
     try {
-      // TODO: 백엔드 API 추가 후 활성화
-      // const response = await apiClient.post<PaymentMethodDto>('/users/me/payment-methods', paymentForm);
-      // setPaymentMethods((prev) => [...prev, response.data]);
-
-      // 임시: 로컬에 추가
-      const newMethod: PaymentMethodDto = {
-        id: Date.now().toString(),
-        cardNumber: '**** **** **** ' + paymentForm.cardNumber.slice(-4),
-        cardHolder: paymentForm.cardHolder,
-        expiryDate: paymentForm.expiryDate,
-        cardType: detectCardType(paymentForm.cardNumber),
+      const request: AddCardRequest = {
+        cardBrand: paymentForm.cardBrand || 'OTHER',
+        cardNumber: paymentForm.cardNumber.replace(/\s/g, ''),
+        expiryMonth: parseInt(paymentForm.expiryMonth),
+        expiryYear: parseInt(paymentForm.expiryYear),
+        cardHolderName: paymentForm.cardHolderName,
+        cvv: paymentForm.cvv,
         isDefault: paymentMethods.length === 0 || paymentForm.isDefault || false,
-        createdAt: new Date().toISOString(),
       };
-      setPaymentMethods((prev) => [...prev, newMethod]);
+
+      const response = await apiClient.post<UserCardResponseDto>('/users/cards', request);
+      setPaymentMethods((prev) => [...prev, response.data]);
 
       // 폼 초기화
       setPaymentForm({
+        cardBrand: '',
         cardNumber: '',
-        cardHolder: '',
-        expiryDate: '',
+        expiryMonth: '',
+        expiryYear: '',
+        cardHolderName: '',
         cvv: '',
         isDefault: false,
       });
       setIsAddingPayment(false);
-      alert('결제수단이 추가되었습니다. (백엔드 API 연동 후 실제 저장됩니다)');
-    } catch (err) {
+      alert('결제수단이 추가되었습니다.');
+    } catch (err: any) {
       console.error('결제수단 추가 실패:', err);
-      alert('결제수단 추가에 실패했습니다.');
+      const errorMessage = err.response?.data?.message || '결제수단 추가에 실패했습니다.';
+      alert(errorMessage);
     } finally {
       setIsSavingPayment(false);
     }
@@ -207,27 +248,69 @@ export const MyPage: React.FC = () => {
     if (!window.confirm('이 결제수단을 삭제하시겠습니까?')) return;
 
     try {
-      // TODO: 백엔드 API 추가 후 활성화
-      // await apiClient.delete(`/users/me/payment-methods/${methodId}`);
+      await apiClient.delete(`/users/cards/${methodId}`);
       setPaymentMethods((prev) => prev.filter((m) => m.id !== methodId));
       alert('결제수단이 삭제되었습니다.');
-    } catch (err) {
+    } catch (err: any) {
       console.error('결제수단 삭제 실패:', err);
-      alert('삭제에 실패했습니다.');
+      const errorMessage = err.response?.data?.message || '결제수단 삭제에 실패했습니다.';
+      alert(errorMessage);
     }
   };
 
-  const handleSetDefaultPayment = async (methodId: string) => {
+
+  // ----------------------------------------
+  // 핸들러: 주소 관리
+  // ----------------------------------------
+  const handleAddressFormChange = (field: string, value: string) => {
+    setAddressForm((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const handleAddAddress = async () => {
+    if (!addressForm.address.trim()) {
+      alert('주소를 입력해주세요.');
+      return;
+    }
+
+    setIsSavingAddress(true);
     try {
-      // TODO: 백엔드 API 추가 후 활성화
-      // await apiClient.patch(`/users/me/payment-methods/${methodId}/default`);
-      setPaymentMethods((prev) =>
-        prev.map((m) => ({ ...m, isDefault: m.id === methodId }))
-      );
-    } catch (err) {
-      console.error('기본 결제수단 설정 실패:', err);
+      const request = {
+        address: addressForm.address.trim(),
+      };
+
+      const response = await apiClient.post<string[]>('/users/addresses', request);
+      setAddresses(response.data);
+
+      // 폼 초기화
+      setAddressForm({
+        address: '',
+      });
+      setIsAddingAddress(false);
+      alert('주소가 추가되었습니다.');
+    } catch (err: any) {
+      console.error('주소 추가 실패:', err);
+      const errorMessage = err.response?.data?.message || '주소 추가에 실패했습니다.';
+      alert(errorMessage);
+    } finally {
+      setIsSavingAddress(false);
     }
   };
+
+  const handleDeleteAddress = async (address: string) => {
+    if (!window.confirm('이 주소를 삭제하시겠습니까?')) return;
+
+    try {
+      const request = { address };
+      const response = await apiClient.delete<string[]>('/users/addresses', { data: request });
+      setAddresses(response.data);
+      alert('주소가 삭제되었습니다.');
+    } catch (err: any) {
+      console.error('주소 삭제 실패:', err);
+      const errorMessage = err.response?.data?.message || '주소 삭제에 실패했습니다.';
+      alert(errorMessage);
+    }
+  };
+
 
   // ----------------------------------------
   // 카드 타입별 아이콘
@@ -358,22 +441,6 @@ export const MyPage: React.FC = () => {
               )}
             </div>
 
-            {/* 주소 */}
-            <div>
-              <label className="block text-sm font-medium text-gray-500 mb-1">
-                주소
-              </label>
-              {isEditingProfile ? (
-                <input
-                  type="text"
-                  value={profileForm.address}
-                  onChange={(e) => handleProfileChange('address', e.target.value)}
-                  className="w-full p-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                />
-              ) : (
-                <p className="text-gray-900 font-medium">{user?.address || '-'}</p>
-              )}
-            </div>
 
             {/* 추가 정보 (읽기 전용) */}
             <div className="pt-4 border-t border-gray-100">
@@ -434,7 +501,7 @@ export const MyPage: React.FC = () => {
                       <span className="text-2xl">{getCardIcon(method.cardType)}</span>
                       <div>
                         <p className="font-medium text-gray-900">
-                          {method.cardNumber}
+                          {method.cardBrand} · **** **** **** {method.cardNumber.slice(-4)}
                           {method.isDefault && (
                             <span className="ml-2 text-xs text-green-600 bg-green-100 px-2 py-0.5 rounded-full">
                               기본
@@ -442,19 +509,11 @@ export const MyPage: React.FC = () => {
                           )}
                         </p>
                         <p className="text-sm text-gray-500">
-                          {method.cardHolder} · 만료 {method.expiryDate}
+                          {method.cardHolderName} · 만료 {method.expiryMonth.toString().padStart(2, '0')}/{method.expiryYear}
                         </p>
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
-                      {!method.isDefault && (
-                        <button
-                          onClick={() => handleSetDefaultPayment(method.id)}
-                          className="text-sm text-gray-500 hover:text-green-600"
-                        >
-                          기본 설정
-                        </button>
-                      )}
                       <button
                         onClick={() => handleDeletePaymentMethod(method.id)}
                         className="text-sm text-red-500 hover:text-red-700"
@@ -506,24 +565,38 @@ export const MyPage: React.FC = () => {
                   </label>
                   <input
                     type="text"
-                    value={paymentForm.cardHolder}
-                    onChange={(e) => handlePaymentFormChange('cardHolder', e.target.value)}
+                    value={paymentForm.cardHolderName}
+                    onChange={(e) => handlePaymentFormChange('cardHolderName', e.target.value)}
                     placeholder="홍길동"
                     className="w-full p-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-transparent"
                   />
                 </div>
 
                 {/* 만료일 & CVV */}
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-3 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-500 mb-1">
-                      만료일
+                      만료 월
                     </label>
                     <input
                       type="text"
-                      value={paymentForm.expiryDate}
-                      onChange={(e) => handlePaymentFormChange('expiryDate', e.target.value)}
-                      placeholder="MM/YY"
+                      value={paymentForm.expiryMonth}
+                      onChange={(e) => handlePaymentFormChange('expiryMonth', e.target.value)}
+                      placeholder="MM"
+                      maxLength={2}
+                      className="w-full p-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-500 mb-1">
+                      만료 연도
+                    </label>
+                    <input
+                      type="text"
+                      value={paymentForm.expiryYear}
+                      onChange={(e) => handlePaymentFormChange('expiryYear', e.target.value)}
+                      placeholder="YYYY"
+                      maxLength={4}
                       className="w-full p-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-transparent"
                     />
                   </div>
@@ -559,9 +632,11 @@ export const MyPage: React.FC = () => {
                     onClick={() => {
                       setIsAddingPayment(false);
                       setPaymentForm({
+                        cardBrand: '',
                         cardNumber: '',
-                        cardHolder: '',
-                        expiryDate: '',
+                        expiryMonth: '',
+                        expiryYear: '',
+                        cardHolderName: '',
                         cvv: '',
                         isDefault: false,
                       });
@@ -576,6 +651,122 @@ export const MyPage: React.FC = () => {
                     className="flex-1 py-3 rounded-xl bg-green-600 text-white font-medium hover:bg-green-700 transition-all disabled:opacity-50"
                   >
                     {isSavingPayment ? '추가 중...' : '추가하기'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* ============================================ */}
+        {/* 섹션 3: 주소 관리 */}
+        {/* ============================================ */}
+        <div className="bg-white rounded-2xl shadow-lg p-6 mb-6">
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+              <span>📍</span> 배달 주소
+            </h2>
+            {!isAddingAddress && (
+              <button
+                onClick={() => setIsAddingAddress(true)}
+                className="text-green-600 hover:text-green-700 font-medium"
+              >
+                + 추가
+              </button>
+            )}
+          </div>
+
+          {/* 주소 목록 */}
+          {addresses.length > 0 ? (
+            <div className="space-y-3 mb-4">
+              {addresses.map((addr, index) => (
+                <div
+                  key={index}
+                  className={`p-4 rounded-xl border-2 ${
+                    index === 0
+                      ? 'border-green-500 bg-green-50'
+                      : 'border-gray-200 bg-gray-50'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex-1">
+                      <p className="font-medium text-gray-900">
+                        {addr}
+                        {index === 0 && (
+                          <span className="ml-2 text-xs text-green-600 bg-green-100 px-2 py-0.5 rounded-full">
+                            기본
+                          </span>
+                        )}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => handleDeleteAddress(addr)}
+                        className="text-sm text-red-500 hover:text-red-700"
+                      >
+                        삭제
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            !isAddingAddress && (
+              <div className="text-center py-8 text-gray-500">
+                <p className="mb-2">등록된 주소가 없습니다.</p>
+                <button
+                  onClick={() => setIsAddingAddress(true)}
+                  className="text-green-600 hover:underline"
+                >
+                  주소 추가하기
+                </button>
+              </div>
+            )
+          )}
+
+          {/* 주소 추가 폼 */}
+          {isAddingAddress && (
+            <div className="border-t border-gray-100 pt-4 mt-4">
+              <h3 className="font-medium text-gray-900 mb-4">새 주소 추가</h3>
+              <div className="space-y-4">
+                {/* 주소 */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-500 mb-1">
+                    주소 <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={addressForm.address}
+                    onChange={(e) => handleAddressFormChange('address', e.target.value)}
+                    placeholder="서울특별시 동대문구 서울시립대로 163 정보기술관 1층"
+                    className="w-full p-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                  />
+                </div>
+
+                <p className="text-xs text-gray-400">
+                  도로명 주소로 자세하게 적어주세요
+                </p>
+
+                {/* 버튼 */}
+                <div className="flex gap-3 pt-2">
+                  <button
+                    onClick={() => {
+                      setIsAddingAddress(false);
+                      setAddressForm({
+                        address: '',
+                      });
+                    }}
+                    className="flex-1 py-3 rounded-xl border-2 border-gray-300 text-gray-600 font-medium hover:bg-gray-50 transition-all"
+                  >
+                    취소
+                  </button>
+                  <button
+                    onClick={handleAddAddress}
+                    disabled={isSavingAddress || !addressForm.address.trim()}
+                    className="flex-1 py-3 rounded-xl bg-green-600 text-white font-medium hover:bg-green-700 transition-all disabled:opacity-50"
+                  >
+                    {isSavingAddress ? '추가 중...' : '추가하기'}
                   </button>
                 </div>
               </div>
