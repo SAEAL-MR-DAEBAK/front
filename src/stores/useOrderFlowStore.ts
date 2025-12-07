@@ -61,6 +61,9 @@ interface OrderFlowState {
   globalAdditionalMenuItems: AdditionalMenuItem[];
   globalMemo: string;
 
+  // 배달 희망 시간
+  requestedDeliveryTime: string;  // ISO 형식 날짜/시간 문자열
+
   // ----------------------------------------
   // 액션
   // ----------------------------------------
@@ -92,6 +95,9 @@ interface OrderFlowState {
   removeGlobalAdditionalMenuItem: (menuItemId: string) => void;
   updateGlobalAdditionalMenuItemQuantity: (menuItemId: string, quantity: number) => void;
 
+  // 배달 희망 시간 설정
+  setRequestedDeliveryTime: (time: string) => void;
+
   // 초기화
   resetOrder: () => void;
 
@@ -114,6 +120,7 @@ export const useOrderFlowStore = create<OrderFlowState>((set, get) => ({
   selectedDinners: [],
   globalAdditionalMenuItems: [],
   globalMemo: '',
+  requestedDeliveryTime: '',
 
   // ----------------------------------------
   // 단계 이동 액션
@@ -332,6 +339,11 @@ export const useOrderFlowStore = create<OrderFlowState>((set, get) => ({
   },
 
   // ----------------------------------------
+  // 배달 희망 시간 설정
+  // ----------------------------------------
+  setRequestedDeliveryTime: (time) => set({ requestedDeliveryTime: time }),
+
+  // ----------------------------------------
   // 초기화
   // ----------------------------------------
   resetOrder: () =>
@@ -340,7 +352,8 @@ export const useOrderFlowStore = create<OrderFlowState>((set, get) => ({
       selectedAddress: '',
       selectedDinners: [],
       globalAdditionalMenuItems: [],
-      globalMemo: ''
+      globalMemo: '',
+      requestedDeliveryTime: ''
     }),
 
   // ----------------------------------------

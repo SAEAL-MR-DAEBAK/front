@@ -289,6 +289,16 @@ export const OrderHistoryPage: React.FC = () => {
               <div className="text-sm text-gray-600 space-y-1">
                 <p>배송 방법: {order.deliveryMethod === 'Delivery' ? '배달' : '픽업'}</p>
                 <p>배송 주소: {order.deliveryAddress}</p>
+                {order.requestedDeliveryTime && (
+                  <p className="text-green-600 font-medium">
+                    ⏰ 희망 배달 시간: {formatDate(order.requestedDeliveryTime)}
+                  </p>
+                )}
+                {order.occasionType && (
+                  <p className="text-purple-600 font-medium">
+                    🎉 기념일: {order.occasionType}
+                  </p>
+                )}
                 {order.deliveryMemo && <p>배송 메모: {order.deliveryMemo}</p>}
                 {order.memo && <p>주문 메모: {order.memo}</p>}
               </div>

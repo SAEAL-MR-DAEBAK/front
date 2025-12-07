@@ -307,6 +307,8 @@ export interface OrderResponseDto {
   paymentTransactionId: string;
   memo: string;
   rejectionReason?: string; // 관리자 거절 사유
+  requestedDeliveryTime?: string; // 희망 배달 시간
+  occasionType?: string; // 기념일 종류
   orderedAt: string;
   updatedAt: string;
   items: OrderItemResponseDto[];
@@ -325,133 +327,82 @@ export interface UpdateDeliveryStatusRequest {
 // 음성 주문(Voice Order) 관련 타입
 // ============================================
 
+// 백엔드 OrderFlowState와 동기화
+export enum OrderFlowState {
+  IDLE = 'IDLE',                                     // 대기 상태
+  SELECTING_ADDRESS = 'SELECTING_ADDRESS',           // 배달 주소 선택 중
+  SELECTING_MENU = 'SELECTING_MENU',                 // 디너 메뉴 선택 중
+  SELECTING_STYLE = 'SELECTING_STYLE',               // 서빙 스타일 선택 중
+  SELECTING_QUANTITY = 'SELECTING_QUANTITY',         // 수량 선택 중
+  ASKING_MORE_DINNER = 'ASKING_MORE_DINNER',         // 추가 디너 주문 여부 확인
+  CUSTOMIZING_MENU = 'CUSTOMIZING_MENU',             // 개별 상품 메뉴 구성 커스터마이징
+  SELECTING_ADDITIONAL_MENU = 'SELECTING_ADDITIONAL_MENU',  // 추가 메뉴 아이템 선택
+  ENTERING_MEMO = 'ENTERING_MEMO',                   // 메모/요청사항 입력
+  CONFIRMING = 'CONFIRMING',                         // 최종 확인 중
+  CHECKOUT_READY = 'CHECKOUT_READY',                 // 결제 준비 완료
+}
+
 // 백엔드 UiAction과 동기화
 export enum UiAction {
   NONE = 'NONE',
   SHOW_CONFIRM_MODAL = 'SHOW_CONFIRM_MODAL',
   SHOW_CANCEL_CONFIRM = 'SHOW_CANCEL_CONFIRM',
   UPDATE_ORDER_LIST = 'UPDATE_ORDER_LIST',
-  ORDER_COMPLETED = 'ORDER_COMPLETED',
-  REQUEST_ADDRESS = 'REQUEST_ADDRESS',
-  REQUEST_PAYMENT_METHOD = 'REQUEST_PAYMENT_METHOD',
-  PROCEED_CHECKOUT = 'PROCEED_CHECKOUT',
+  PROCEED_TO_CHECKOUT = 'PROCEED_TO_CHECKOUT',       // 결제 진행 → Cart API 호출 후 주문내역으로 리디렉션
 }
 
-// 백엔드 OrderFlowState와 동기화
-export enum OrderFlowState {
-  IDLE = 'IDLE',
-  SELECTING_ADDRESS = 'SELECTING_ADDRESS',
-  SELECTING_MENU = 'SELECTING_MENU',
-  SELECTING_STYLE = 'SELECTING_STYLE',
-  SELECTING_QUANTITY = 'SELECTING_QUANTITY',
-  ASKING_MORE = 'ASKING_MORE',
-  CUSTOMIZING = 'CUSTOMIZING',
-  READY_TO_CHECKOUT = 'READY_TO_CHECKOUT',
-  CONFIRMING = 'CONFIRMING',
+// 음성 주문 채팅 응답 DTO
+export interface VoiceChatResponseDto {
+  userMessage: string;
+  assistantMessage: string;
+  flowState: OrderFlowState;
+  uiAction: UiAction;
+  currentOrder: VoiceOrderItemDto[];
+  totalPrice: number;
+  selectedAddress: string | null;
+  memo: string | null;
 }
 
-export interface VoiceAdditionalMenuItemDto {
+// 음성 주문 메뉴 커스터마이징 (개별 상품의 메뉴 구성 변경)
+export interface VoiceMenuCustomization {
+  menuItemId: string;
+  menuItemName: string;
+  defaultQuantity: number;  // 기본 수량
+  currentQuantity: number;  // 현재 수량 (사용자가 +/- 한 결과)
+  unitPrice: number;        // 단가
+}
+
+// 음성 주문 추가 메뉴 아이템 (샐러드, 와인 등)
+export interface VoiceAdditionalMenuItem {
   menuItemId: string;
   menuItemName: string;
   quantity: number;
+  unitPrice: number;
+  totalPrice: number;
 }
 
+// 음성 주문 개별 상품 DTO (quantity=1인 개별 아이템)
+export interface VoiceOrderProductDto {
+  productIndex: number;     // 프론트엔드 고유 인덱스
+  dinnerId: string;
+  dinnerName: string;
+  servingStyleId: string | null;
+  servingStyleName: string | null;
+  basePrice: number;
+  stylePrice: number;
+  menuCustomizations: VoiceMenuCustomization[];  // 메뉴 구성 커스터마이징
+  customizationPriceDiff: number;  // 커스터마이징으로 인한 가격 변동
+  totalPrice: number;       // basePrice + stylePrice + customizationPriceDiff
+}
+
+// 음성 주문 아이템 DTO (레거시 호환용 - quantity 포함)
 export interface VoiceOrderItemDto {
   dinnerId: string;
   dinnerName: string;
   servingStyleId: string | null;
   servingStyleName: string | null;
-  productId?: string | null;  // 생성된 Product ID (스타일 선택 후 생성됨)
   quantity: number;
   basePrice: number;
-  unitPrice: number;
+  stylePrice: number;
   totalPrice: number;
-  additionalMenuItems?: VoiceAdditionalMenuItemDto[];
-}
-
-export interface VoiceChatMessageDto {
-  role: 'user' | 'assistant';
-  content: string;
-}
-
-export interface VoiceChatRequestDto {
-  message?: string;
-  audioBase64?: string;
-  audioFormat?: string;
-  conversationHistory?: VoiceChatMessageDto[];
-  currentOrder?: VoiceOrderItemDto[];
-  selectedAddress?: string | null;  // 선택된 배달 주소
-}
-
-export interface VoiceChatResponseDto {
-  userMessage: string;
-  assistantMessage: string;
-  flowState: OrderFlowState;  // 현재 플로우 상태
-  uiAction: UiAction;
-  currentOrder: VoiceOrderItemDto[];
-  totalPrice: number;
-  selectedAddress: string | null;
-  userAddresses?: string[];  // 사용자 주소 목록
-  orderId?: string;          // 주문 완료 시 주문 ID
-  orderNumber?: string;      // 주문 완료 시 주문 번호
-  storeUpdate?: StoreUpdateDto;  // 프론트엔드 Store 업데이트 정보
-}
-
-// Product 메뉴 아이템 정보 (백엔드에서 Product 생성 시 반환)
-export interface StoreProductMenuItemDto {
-  menuItemId: string;
-  menuItemName: string;
-  defaultQuantity: number;
-  currentQuantity: number;
-  unitPrice: number;
-}
-
-export interface StoreUpdateDto {
-  flowState?: OrderFlowState;
-  address?: string;
-  memo?: string;
-
-  // 디너 추가 정보
-  dinnersToAdd?: Array<{
-    dinnerId: string;
-    dinnerName: string;
-    description?: string;
-    basePrice: number;
-    quantity: number;
-  }>;
-
-  // 스타일 설정 및 Product 생성 정보 (핵심!)
-  stylesToSet?: Array<{
-    dinnerId: string;         // Dinner ID
-    dinnerName: string;       // Dinner 이름
-    instanceIndex: number;    // 인스턴스 인덱스
-    styleId: string;          // ServingStyle ID
-    styleName: string;        // ServingStyle 이름
-    styleExtraPrice: number;  // 스타일 추가 가격
-
-    // 백엔드에서 생성한 Product 정보
-    productId: string;        // 생성된 Product ID
-    productName: string;      // Product 이름
-    totalPrice: number;       // Product 총 가격
-    productMenuItems: StoreProductMenuItemDto[];  // 기본 메뉴 아이템 목록
-  }>;
-
-  // 메뉴 아이템 수량 변경
-  menuItemsToUpdate?: Array<{
-    dinnerId: string;
-    instanceIndex: number;
-    productId: string;
-    menuItemId: string;
-    menuItemName: string;
-    quantity: number;
-  }>;
-
-  // 공통 추가 메뉴
-  additionalMenuItemsToAdd?: Array<{
-    menuItemId: string;
-    menuItemName: string;
-    quantity: number;
-    unitPrice: number;
-    productId?: string;  // 생성된 ADDITIONAL_MENU_PRODUCT ID
-  }>;
 }

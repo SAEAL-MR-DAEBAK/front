@@ -26,6 +26,8 @@ export const CheckoutStep: React.FC = () => {
     selectedDinners,
     globalAdditionalMenuItems,
     globalMemo,
+    requestedDeliveryTime,
+    setRequestedDeliveryTime,
     resetOrder,
     prevStep,
   } = useOrderFlowStore();
@@ -242,6 +244,7 @@ export const CheckoutStep: React.FC = () => {
         deliveryAddress: selectedAddress,
         deliveryMethod: 'Delivery',
         memo: globalMemo || undefined,
+        requestedDeliveryTime: requestedDeliveryTime || undefined,
       });
 
       // Step 2: Checkout
@@ -327,6 +330,26 @@ export const CheckoutStep: React.FC = () => {
           <div>
             <p className="text-sm text-gray-500">배달 주소</p>
             <p className="font-bold">{selectedAddress}</p>
+          </div>
+        </div>
+
+        <hr className="border-gray-100" />
+
+        {/* 배달 희망 시간 */}
+        <div className="flex items-start gap-4">
+          <span className="text-2xl">⏰</span>
+          <div className="flex-1">
+            <p className="text-sm text-gray-500 mb-2">배달 희망 시간</p>
+            <input
+              type="datetime-local"
+              value={requestedDeliveryTime}
+              onChange={(e) => setRequestedDeliveryTime(e.target.value)}
+              min={new Date().toISOString().slice(0, 16)}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+            />
+            <p className="text-xs text-gray-400 mt-1">
+              희망하시는 배달 시간을 선택해주세요 (선택사항)
+            </p>
           </div>
         </div>
 
