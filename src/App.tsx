@@ -3,7 +3,6 @@ import { BrowserRouter, Routes, Route, Navigate, Link, useNavigate, useLocation 
 
 import { OrderFlowPage } from './features/order/OrderFlowPage';
 import { DinnerListPage } from './features/dinner/DinnerListPage';
-import { DinnerDetailPage } from './features/dinner/DinnerDetailPage';
 import { LoginPage } from './features/auth/LoginPage';
 import { RegisterPage } from './features/auth/RegisterPage';
 import { OrderHistoryPage } from './features/order/components/OrderHistoryPage';
@@ -129,11 +128,6 @@ const App: React.FC = () => {
           <Route path="/menu" element={
             <ProtectedRoute>
               <DinnerListPage />
-            </ProtectedRoute>
-          } />
-          <Route path="/dinner/:dinnerId" element={
-            <ProtectedRoute>
-              <DinnerDetailPage />
             </ProtectedRoute>
           } />
           <Route path="/orders" element={

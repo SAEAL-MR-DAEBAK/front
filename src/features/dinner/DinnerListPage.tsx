@@ -101,7 +101,7 @@ export const DinnerListPage: React.FC = () => {
             <DinnerCard
               key={dinner.id}
               dinner={dinner}
-              onClick={() => navigate(`/dinner/${dinner.id}`)}
+              onClick={() => navigate('/')}
             />
           ))}
         </div>
